@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ソリティア</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #0b7a3b;
+      color: white;
+      user-select: none;
+    }
+
+    header {
+      padding: 15px;
+      background: #064d26;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .game {
+      padding: 20px;
+    }
+
+    .top {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 30px;
+    }
+
+    .area {
+      display: flex;
+      gap: 15px;
+    }
+
+    .slot, .pile {
+      width: 80px;
+      height: 110px;
+      border: 2px dashed rgba(255,255,255,0.5);
+      border-radius: 8px;
+      position: relative;
+    }
+
+    .columns {
+      display: flex;
+      gap: 15px;
+    }
+
+    .column {
+      width: 80px;
+      min-height: 500px;
+      border-radius: 8px;
+      position: relative;
+    }
+
+    .card {
+      width: 80px;
+      height: 110px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #333;
+      position: absolute;
+      box-sizing: border-box;
+      padding: 6px;
+      font-size: 20px;
+      font-weight: bold;
+      color: black;
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+    }
+
+    .red {
+      color: red;
+    }
+
+    .back {
+      background: linear-gradient(45deg, #123, #36c);
+      color: transparent;
+    }
+
+    .selected {
+      outline: 4px solid yellow;
+    }
+
+    .message {
+      margin-top: 15px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>ソリティア</h1>
+  <button onclick="startGame()">新しいゲーム</button>
+</header>
+
+<div class="game">
+  <div class="top">
+    <div class="area">
+      <div id="stock" class="pile" onclick="drawCard()"></div>
+      <div id="waste" class="pile" onclick="selectWaste()"></div>
+    </div>
+
+    <div class="area">
+      <div class="slot" data-foundation="0" onclick="moveToFoundation(0)"></div>
+      <div class="slot" data-foundation="1" onclick="moveToFoundation(1)"></div>
+      <div class="slot" data-foundation="2" onclick="moveToFoundation(2)"></div>
+      <div class="slot" data-foundation="3" onclick="moveToFoundation(3)"></div>
+    </div>
+  </div>
+
+  <div id="columns" class="columns"></div>
+  <div id="message" class="message"></div>
+</div>
+
+<script>
+  const suits = ["♠", "♥", "♦", "♣"];
+  const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+  let deck = [];
+  let stock = [];
+  let waste = [];
+  let columns = [];
+  let foundations = [[], [], [], []];
+  let selected = null;
+
+  function createDeck() {
+    deck = [];
+    for (let suit of suits) {
+      for (let i = 0; i < values.length; i++) {
+        deck.push({
+          suit,
+          value: values[i],
+          rank: i + 1,
+          color: suit === "♥" || suit === "♦" ? "red" : "black",
+          faceUp: false
+        });
+      }
+    }
+  }
+
+  function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+  }
+
+  function startGame() {
+    createDeck();
+    shuffle(deck);
+
+    stock = [];
+    waste = [];
+    columns = [[], [], [], [], [], [], []];
+    foundations = [[], [], [], []];
+    selected = null;
+
+    for (let i = 0; i < 7; i++) {
+      for (let j = 0; j <= i; j++) {
+        const card = deck.pop();
+        if (j === i) card.faceUp = true;
+        columns[i].push(card);
+      }
+    }
+
+    stock = deck;
+    render();
+  }
+
+  function render() {
+    document.querySelectorAll(".card").forEach(c => c.remove());
+
+    renderStock();
+    renderWaste();
+    renderFoundations();
+    renderColumns();
+    checkWin();
+  }
+
+  function renderStock() {
+    const stockEl = document.getElementById("stock");
+    stockEl.innerHTML = "";
+
+    if (stock.length > 0) {
+      const card = document.createElement("div");
+      card.className = "card back";
+      card.style.top = "0";
+      card.style.left = "0";
+      stockEl.appendChild(card);
+    }
+  }
+
+  function renderWaste() {
+    const wasteEl = document.getElementById("waste");
+    wasteEl.innerHTML = "";
+
+    const top = waste[waste.length - 1];
+    if (top) {
+      wasteEl.appendChild(createCardElement(top, 0, 0));
+    }
+  }
+
+  function renderFoundations() {
+    document.querySelectorAll("[data-foundation]").forEach((slot, i) => {
+      slot.innerHTML = "";
+      const top = foundations[i][foundations[i].length - 1];
+      if (top) {
+        slot.appendChild(createCardElement(top, 0, 0));
+      }
+    });
+  }
+
+  function renderColumns() {
+    const columnsEl = document.getElementById("columns");
+    columnsEl.innerHTML = "";
+
+    columns.forEach((col, colIndex) => {
+      const columnEl = document.createElement("div");
+      columnEl.className = "column";
+      columnEl.onclick = () => moveToColumn(colIndex);
+
+      col.forEach((card, cardIndex) => {
+        const cardEl = createCardElement(card, 0, cardIndex * 28);
+        cardEl.onclick = (e) => {
+          e.stopPropagation();
+          selectColumnCard(colIndex, cardIndex);
+        };
+        columnEl.appendChild(cardEl);
+      });
+
+      columnsEl.appendChild(columnEl);
+    });
+  }
+
+  function createCardElement(card, left, top) {
+    const el = document.createElement("div");
+    el.className = "card";
+    if (!card.faceUp) el.classList.add("back");
+    if (card.color === "red") el.classList.add("red");
+
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+
+    if (card.faceUp) {
+      el.textContent = card.value + card.suit;
+    }
+
+    if (selected && selected.card === card) {
+      el.classList.add("selected");
+    }
+
+    return el;
+  }
+
+  function drawCard() {
+    if (stock.length > 0) {
+      const card = stock.pop();
+      card.faceUp = true;
+      waste.push(card);
+    } else {
+      stock = waste.reverse();
+      stock.forEach(card => card.faceUp = false);
+      waste = [];
+    }
+
+    selected = null;
+    render();
+  }
+
+  function selectWaste() {
+    if (waste.length === 0) return;
+
+    selected = {
+      type: "waste",
+      card: waste[waste.length - 1]
+    };
+
+    render();
+  }
+
+  function selectColumnCard(colIndex, cardIndex) {
+    const card = columns[colIndex][cardIndex];
+    if (!card.faceUp) return;
+
+    selected = {
+      type: "column",
+      colIndex,
+      cardIndex,
+      card
+    };
+
+    render();
+  }
+
+  function moveToColumn(targetColIndex) {
+    if (!selected) return;
+
+    let movingCards = [];
+
+    if (selected.type === "waste") {
+      movingCards = [waste[waste.length - 1]];
+    } else {
+      movingCards = columns[selected.colIndex].slice(selected.cardIndex);
+    }
+
+    const firstCard = movingCards[0];
+    const targetColumn = columns[targetColIndex];
+    const targetCard = targetColumn[targetColumn.length - 1];
+
+    let canMove = false;
+
+    if (!targetCard && firstCard.rank === 13) {
+      canMove = true;
+    }
+
+    if (
+      targetCard &&
+      targetCard.faceUp &&
+      targetCard.color !== firstCard.color &&
+      targetCard.rank === firstCard.rank + 1
+    ) {
+      canMove = true;
+    }
+
+    if (!canMove) return;
+
+    if (selected.type === "waste") {
+      waste.pop();
+    } else {
+      columns[selected.colIndex] = columns[selected.colIndex].slice(0, selected.cardIndex);
+      flipLastCard(selected.colIndex);
+    }
+
+    columns[targetColIndex].push(...movingCards);
+    selected = null;
+    render();
+  }
+
+  function moveToFoundation(index) {
+    if (!selected) return;
+
+    const foundation = foundations[index];
+    const top = foundation[foundation.length - 1];
+    const card = selected.card;
+
+    let canMove = false;
+
+    if (!top && card.rank === 1) {
+      canMove = true;
+    }
+
+    if (top && top.suit === card.suit && card.rank === top.rank + 1) {
+      canMove = true;
+    }
+
+    if (!canMove) return;
+
+    if (selected.type === "waste") {
+      waste.pop();
+    } else {
+      const movingCards = columns[selected.colIndex].slice(selected.cardIndex);
+      if (movingCards.length !== 1) return;
+
+      columns[selected.colIndex].pop();
+      flipLastCard(selected.colIndex);
+    }
+
+    foundations[index].push(card);
+    selected = null;
+    render();
+  }
+
+  function flipLastCard(colIndex) {
+    const col = columns[colIndex];
+    if (col.length > 0) {
+      col[col.length - 1].faceUp = true;
+    }
+  }
+
+  function checkWin() {
+    const total = foundations.reduce((sum, f) => sum + f.length, 0);
+    const msg = document.getElementById("message");
+
+    if (total === 52) {
+      msg.textContent = "クリア！おめでとうございます！";
+    } else {
+      msg.textContent = "";
+    }
+  }
+
+  startGame();
+</script>
+
+</body>
+</html>
